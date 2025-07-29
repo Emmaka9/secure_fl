@@ -21,12 +21,12 @@ DCRTPoly Server::aggregateShares() {
         result += m_clientShares[i].c0;
     }
     // The server sums the MASKED shares. The masks will cancel out.
-    DCRTPoly result1 = m_clientShares[0].d_masked;
+    //DCRTPoly result1 = m_clientShares[0].d_masked;
     for (const auto& share : m_clientShares) {
-        result1 += share.d_masked;
+        result += share.d_masked;
     }
-    std::cout << "Server: result1: " << result1 << std::endl;
-    return result + result1;
+    //std::cout << "Server: result1: " << result1 << std::endl;
+    return result; // + result1;
 }
 
 std::vector<double> Server::getFinalResult(CryptoContext<DCRTPoly>& cc, uint32_t dataSize) {

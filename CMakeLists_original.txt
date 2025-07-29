@@ -13,10 +13,13 @@ find_package(OpenFHE CONFIG REQUIRED)
 message(STATUS "Found OpenFHE Version: ${OpenFHE_VERSION}")
 
 # --- Find OpenSSL Package ---
+# This is required for ECDH and ChaCha20. Now that libssl-dev is installed,
+# this standard command should work correctly.
 find_package(OpenSSL REQUIRED)
 message(STATUS "Found OpenSSL Version: ${OPENSSL_VERSION}")
 
-# --- Build Main Executable ---
+# --- Build Executable ---
+# Add all your source files, including the new masking module
 add_executable(secure_aggregation_sim
     main.cpp
     mk_ckks.cpp
@@ -25,42 +28,23 @@ add_executable(secure_aggregation_sim
     masking.cpp
 )
 
-# --- Build Debugging Executable ---
-add_executable(debug_masking
-    test_debug.cpp
-    mk_ckks.cpp
-    client.cpp
-    masking.cpp
-    # Note: server.cpp is not needed for this test
-)
-
 # --- Manually Add Include Directories (for robustness) ---
-# Apply to both executables
+# Explicitly list all required OpenFHE subdirectories.
 target_include_directories(secure_aggregation_sim PRIVATE
     "/usr/local/include/openfhe"
     "/usr/local/include/openfhe/pke"
     "/usr/local/include/openfhe/core"
     "/usr/local/include/openfhe/binfhe"
-    ${OPENSSL_INCLUDE_DIR}
-)
-target_include_directories(debug_masking PRIVATE
-    "/usr/local/include/openfhe"
-    "/usr/local/include/openfhe/pke"
-    "/usr/local/include/openfhe/core"
-    "/usr/local/include/openfhe/binfhe"
+    # The line below is often not needed if find_package works correctly,
+    # but we include it for maximum compatibility.
     ${OPENSSL_INCLUDE_DIR}
 )
 
-
-# --- Link Libraries (Classic Method) ---
-message(STATUS "Linking libraries: ${OpenFHE_LIBRARIES}")
-# Apply to both executables
+# --- Link Libraries ---
+# Link against both OpenFHE (using the classic variable) and 
+# OpenSSL (using the modern targets provided by find_package).
+message(STATUS "Linking OpenFHE libraries: ${OpenFHE_LIBRARIES}")
 target_link_libraries(secure_aggregation_sim PRIVATE 
-    ${OpenFHE_LIBRARIES}
-    OpenSSL::SSL
-    OpenSSL::Crypto
-)
-target_link_libraries(debug_masking PRIVATE 
     ${OpenFHE_LIBRARIES}
     OpenSSL::SSL
     OpenSSL::Crypto
@@ -71,7 +55,6 @@ find_package(OpenMP)
 if(OpenMP_FOUND)
     message(STATUS "OpenMP found, enabling parallel execution.")
     target_link_libraries(secure_aggregation_sim PRIVATE OpenMP::OpenMP_CXX)
-    target_link_libraries(debug_masking PRIVATE OpenMP::OpenMP_CXX)
 else()
     message(WARNING "OpenMP not found. The simulation will run on a single core.")
 endif()
