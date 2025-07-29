@@ -1,41 +1,50 @@
-# Prerequisites
-*.d
+# --- CMake / Build Artifacts ---
+# Ignore the entire build directory. This is the most important rule.
+/build/
 
-# Compiled Object files
-*.slo
-*.lo
-*.o
-*.obj
+# Ignore CMake generated files that might appear in the root directory
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+compile_commands.json
 
-# Precompiled Headers
-*.gch
-*.pch
+# --- Executables ---
+# Ignore the specific executables we are building
+secure_aggregation_sim
+debug_masking
 
-# Linker files
-*.ilk
-
-# Debugger Files
-*.pdb
-
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
-
-# Executables
+# Ignore other common executable names and extensions
 *.exe
 *.out
 *.app
 
-# debug information files
-*.dwo
+# --- Compiled Libraries & Object Files ---
+# Ignore object files, static libraries, and dynamic libraries
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+
+# --- Editor/IDE Specific Files ---
+# Visual Studio Code
+.vscode/
+
+# CLion / IntelliJ
+.idea/
+
+# --- OS Specific Files ---
+# macOS
+.DS_Store
+
+# --- Other Generated Files ---
+# Core dump files (generated on crash)
+core.*
+*.stackdump
+
+# Precompiled Headers
+*.gch
+*.pch
