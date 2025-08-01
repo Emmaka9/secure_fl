@@ -1,153 +1,204 @@
 // main.cpp
 //
-// This is the main orchestrator for the secure aggregation simulation.
-// It sets up the environment, creates clients and a server, directs the
-// protocol flow, and verifies the final result. It also includes
-// performance monitoring for key cryptographic operations.
+// This is the main orchestrator and a comprehensive EXPERIMENTAL HARNESS for the
+// secure aggregation simulation. It is designed to run two distinct sets of
+// experiments:
+//   1. Scaling the number of clients (N) with a fixed data size.
+//   2. Scaling the data size (d) with a fixed number of clients.
+//
+// It measures granular performance metrics for each cryptographic stage and
+// prints formatted summary tables to the console, while logging all raw data
+// points to four separate, clearly-named CSV files for detailed analysis.
 
 #include "common.h"
 #include "mk_ckks.h"
 #include "client.h"
 #include "server.h"
-
-// Standard library includes for timing, file I/O, and calculations
-#include <chrono>
-#include <fstream>
 #include <vector>
-#include <numeric>
-#include <algorithm>
+#include <memory>
+#include <filesystem>
+
+// =================================================================================
+// EXPERIMENT CONFIGURATION (LARGE-SCALE)
+// =================================================================================
+
+// --- Experiment 1: Scaling Number of Clients ---
+// More data points, up to 500 clients.
+const std::vector<int> CLIENT_COUNTS = {10, 50, 100, 200, 500};
+// FIX: Data vector size must be a power of two. Using 2^16 = 65536.
+const uint32_t FIXED_DATA_SIZE_FOR_EXP1 = 65536;
+// Ring dimension must be a power of 2 and >= 2 * dataSize. 2^18 = 262144 is appropriate.
+const uint32_t FIXED_RING_DIM_FOR_EXP1 = 131072; 
+
+// --- Experiment 2: Scaling Data Size ---
+// Number of clients is now fixed at 500.
+const int FIXED_CLIENT_COUNT_FOR_EXP2 = 500;
+// Testing a wider range of data sizes.
+const std::vector<uint32_t> DATA_SIZES = {4096, 8192, 16384, 32768, 65536};
+// Corresponding ring dimensions. Each must be a power of 2, meet the security
+// standard (>=16384), and be >= 2 * dataSize.
+const std::vector<uint32_t> RING_DIMENSIONS = {16384, 16384, 32768, 65536, 131072};
+
+
+// =================================================================================
+// FORWARD DECLARATION of the main experiment runner function
+// =================================================================================
+void run_experiment(int numClients, uint32_t dataSize, uint32_t ringDimension,
+                    std::ofstream& client_log, std::ofstream& server_log);
+
+
+// =================================================================================
+// MAIN ORCHESTRATOR
+// =================================================================================
 
 int main() {
-    std::cout << "🚀 Starting Secure Aggregation Simulation with Masking" << std::endl;
+    std::cout << "🚀 Starting Secure Aggregation Performance Evaluation Harness (Large-Scale)" << std::endl;
 
-    // --- 1. SETUP ---
-    std::cout << "\n--- Phase 1: Setup ---" << std::endl;
-    uint32_t numClients = 100;
-    uint32_t dataSize = 1024;
+    // --- Setup Log Directory ---
+    std::string log_dir = "../log_files";
+    try {
+        std::filesystem::create_directory(log_dir);
+    } catch (const std::filesystem::filesystem_error& e) {
+        std::cerr << "Error creating log directory: " << e.what() << std::endl;
+        return 1;
+    }
 
-    // Configure CKKS parameters
+    // ============================================================================
+    // --- EXPERIMENT 1: SCALING NUMBER OF CLIENTS ---
+    // ============================================================================
+    std::cout << "\n\n=================================================================================="
+              << "\n--- EXPERIMENT 1: SCALING NUMBER OF CLIENTS (Data Size = " << FIXED_DATA_SIZE_FOR_EXP1 << ") ---"
+              << "\n==================================================================================" << std::endl;
+
+    // --- Setup Log Files for Experiment 1 ---
+    std::ofstream client_log_exp1(log_dir + "/log_scaling_clients_client.csv");
+    client_log_exp1 << "NumClients,DataSize,RingDimension,ClientID,T_KeyGen_MKCKKS_ms,T_KeyGen_ECDH_ms,T_KeyGen_Total_ms,T_Encrypt_ms,T_PartialDec_ms,T_MaskGen_ms,T_ClientTotal_ms\n";
+    
+    std::ofstream server_log_exp1(log_dir + "/log_scaling_clients_server.csv");
+    server_log_exp1 << "NumClients,DataSize,RingDimension,T_Aggregate_ms,T_Decode_ms,T_ServerTotal_ms\n";
+
+    // --- Run Experiment 1 Loop ---
+    for (int numClients : CLIENT_COUNTS) {
+        run_experiment(numClients, FIXED_DATA_SIZE_FOR_EXP1, FIXED_RING_DIM_FOR_EXP1, client_log_exp1, server_log_exp1);
+    }
+    client_log_exp1.close();
+    server_log_exp1.close();
+
+
+    // ============================================================================
+    // --- EXPERIMENT 2: SCALING DATA SIZE ---
+    // ============================================================================
+    std::cout << "\n\n============================================================================"
+              << "\n--- EXPERIMENT 2: SCALING DATA SIZE (Client Count = " << FIXED_CLIENT_COUNT_FOR_EXP2 << ") ---"
+              << "\n============================================================================" << std::endl;
+
+    // --- Setup Log Files for Experiment 2 ---
+    std::ofstream client_log_exp2(log_dir + "/log_scaling_datasize_client.csv");
+    client_log_exp2 << "NumClients,DataSize,RingDimension,ClientID,T_KeyGen_MKCKKS_ms,T_KeyGen_ECDH_ms,T_KeyGen_Total_ms,T_Encrypt_ms,T_PartialDec_ms,T_MaskGen_ms,T_ClientTotal_ms\n";
+    
+    std::ofstream server_log_exp2(log_dir + "/log_scaling_datasize_server.csv");
+    server_log_exp2 << "NumClients,DataSize,RingDimension,T_Aggregate_ms,T_Decode_ms,T_ServerTotal_ms\n";
+
+    // --- Run Experiment 2 Loop ---
+    for (size_t i = 0; i < DATA_SIZES.size(); ++i) {
+        run_experiment(FIXED_CLIENT_COUNT_FOR_EXP2, DATA_SIZES[i], RING_DIMENSIONS[i], client_log_exp2, server_log_exp2);
+    }
+    client_log_exp2.close();
+    server_log_exp2.close();
+
+
+    std::cout << "\n\n🎉 All experiments finished successfully!" << std::endl;
+    std::cout << "Raw data for all runs has been logged to the 'log_files' directory." << std::endl;
+    
+    return 0;
+}
+
+
+// =================================================================================
+// CORE EXPERIMENT RUNNER FUNCTION
+// =================================================================================
+
+/**
+ * @brief Executes a single, complete performance evaluation run for a given set
+ * of parameters. It handles crypto context generation, client/server setup,
+ * all cryptographic operations, timing, and logging.
+ *
+ * @param numClients The number of clients (N) for this run.
+ * @param dataSize The size of the data vector (d) for each client.
+ * @param ringDimension The polynomial ring dimension (N_poly) for CKKS.
+ * @param client_log An output file stream for logging detailed client metrics.
+ * @param server_log An output file stream for logging server metrics.
+ */
+void run_experiment(int numClients, uint32_t dataSize, uint32_t ringDimension,
+                    std::ofstream& client_log, std::ofstream& server_log) {
+    
+    std::cout << "\n--- Running with N=" << numClients << ", d=" << dataSize << ", N_poly=" << ringDimension << " ---" << std::endl;
+
+    // --- A. Per-Run CryptoContext Generation ---
+    // This is critical because the context depends on the data/ring size.
     CCParams<CryptoContextCKKSRNS> parameters;
-    parameters.SetRingDim(16384);
+    parameters.SetRingDim(ringDimension);
     parameters.SetMultiplicativeDepth(1);
     parameters.SetScalingModSize(50);
-    parameters.SetBatchSize(dataSize);
 
-    // Generate the crypto context
+    parameters.SetBatchSize(dataSize);
     CryptoContext<DCRTPoly> cc = GenCryptoContext(parameters);
     cc->Enable(PKE);
-    std::cout << "CryptoContext generated." << std::endl;
+    //cc->Enable(KEYSWITCH);
+    //cc->Enable(LEVELEDSHE);
 
-    // --- Performance Logging Setup ---
-    std::ofstream logFile("timing_log.txt");
-    logFile << "Client ID, KeyGen (us), Share-Gen (us)\n";
-    std::vector<double> keygen_times;
-    std::vector<double> share_gen_times;
-
-
-    // --- 2. ROUND 1: Key Generation ---
-    std::cout << "\n--- Phase 2 (Round 1): Key Generation ---" << std::endl;
-    // The CRS 'a' is a public polynomial shared by all clients for key generation.
+    // --- B. Setup & Key Generation Timing ---
     DCRTPoly crs_a = GenerateCRS(cc);
-    std::cout << "Common Reference String (CRS) generated." << std::endl;
-
     Server server;
     std::vector<Client> clients;
     clients.reserve(numClients);
-    for (uint32_t i = 0; i < numClients; ++i) {
-        // Time the creation of each client, which includes MK-CKKS and ECDH key generation.
-        auto start_keygen = std::chrono::high_resolution_clock::now();
-        clients.emplace_back(i, cc, crs_a);
-        auto end_keygen = std::chrono::high_resolution_clock::now();
-        
-        // Record duration in microseconds
-        double keygen_duration = std::chrono::duration_cast<std::chrono::microseconds>(end_keygen - start_keygen).count();
-        keygen_times.push_back(keygen_duration);
-    }
-    std::cout << numClients << " clients created and all keys generated." << std::endl;
+    std::vector<ClientTimings> allClientTimings(numClients);
 
-    // --- New Step: Distribute ECDH Public Keys ---
-    // In a real system, this would be a broadcast or a server-mediated exchange.
+    for (int i = 0; i < numClients; ++i) {
+        clients.emplace_back(i);
+        clients[i].generateKeys(cc, crs_a, allClientTimings[i].key_gen);
+    }
+    
     std::map<uint32_t, ECDHPublicKey> allPublicKeys;
     for (const auto& client : clients) {
         allPublicKeys[client.getId()] = client.getECDHPublicKey();
     }
-    std::cout << "ECDH public keys have been distributed to all clients." << std::endl;
+    std::cout << "Setup and KeyGen complete." << std::endl;
 
-    // --- 3. ROUND 2: Client-Side Computation ---
-    std::cout << "\n--- Phase 3 (Round 2): Client Computation ---" << std::endl;
-    for (auto& client : clients) {
-        client.generateData(dataSize); // Generate random data vector
-
-        // Time the client's share preparation. This includes:
-        // 1. Mask generation (ECDH secret derivation and PRG).
-        // 2. Data encoding and encryption (MK-CKKS Encrypt).
-        // 3. Partial decryption calculation (`d_i = c1_i * s_i`).
-        auto start_share = std::chrono::high_resolution_clock::now();
-        ClientShare share = client.prepareShareForServer(cc, allPublicKeys);
-        auto end_share = std::chrono::high_resolution_clock::now();
-        
-        // Record duration in microseconds
-        double share_duration = std::chrono::duration_cast<std::chrono::microseconds>(end_share - start_share).count();
-        share_gen_times.push_back(share_duration);
-
-        // Log the timing data for this client
-        logFile << client.getId() << ", " << keygen_times[client.getId()] << ", " << share_duration << "\n";
-        
-        server.collectShare(share);
+    // --- C. Client-Side Round Computation & Timing ---
+    for (int i = 0; i < numClients; ++i) {
+        clients[i].generateData(dataSize);
+        ClientResult client_result = clients[i].prepareShareForServer(cc, allPublicKeys);
+        server.collectShare(client_result.share);
+        allClientTimings[i].t_encrypt_ms = client_result.timings.t_encrypt_ms;
+        allClientTimings[i].t_partial_dec_ms = client_result.timings.t_partial_dec_ms;
+        allClientTimings[i].t_mask_gen_ms = client_result.timings.t_mask_gen_ms;
+        allClientTimings[i].t_client_total_ms = client_result.timings.t_client_total_ms;
     }
-    std::cout << "All clients have sent their secure shares to the server." << std::endl;
+    std::cout << "All clients have prepared and sent shares." << std::endl;
 
-    // --- 4. ROUND 3: Server-Side Computation ---
-    std::cout << "\n--- Phase 4 (Round 3): Server Computation ---" << std::endl;
-    // Time the final aggregation and decoding on the server.
-    auto start_decode = std::chrono::high_resolution_clock::now();
-    std::vector<double> finalResult = server.getFinalResult(cc, dataSize);
-    auto end_decode = std::chrono::high_resolution_clock::now();
-    double decode_duration_ms = std::chrono::duration_cast<std::chrono::microseconds>(end_decode - start_decode).count() / 1000.0;
-    logFile << "\nServer Final Decode Time (ms)," << decode_duration_ms << "\n";
-    logFile.close();
+    // --- D. Server-Side Computation & Timing ---
+    ServerResult server_result = server.getFinalResult(cc, dataSize);
+    server_result.timings.t_server_total_ms = server_result.timings.t_aggregate_ms + server_result.timings.t_decode_ms;
+    std::cout << "Server has aggregated and decoded the final result." << std::endl;
 
-
-    // --- 5. VERIFICATION ---
-    std::cout << "\n--- Phase 5: Verification ---" << std::endl;
-    // Calculate the expected sum locally for comparison.
-    std::vector<double> expected_sum(dataSize, 0.0);
-    for (const auto& client : clients) {
-        const auto& clientData = client.getData();
-        for (size_t i = 0; i < dataSize; ++i) {
-            expected_sum[i] += clientData[i];
-        }
+    // --- E. Log Raw Data to CSV ---
+    // The data is written in a consistent order for all experiments.
+    for(int i = 0; i < numClients; ++i) {
+        client_log << numClients << "," << dataSize << "," << ringDimension << "," << i << ","
+                   << allClientTimings[i].key_gen.t_mkckks_ms << ","
+                   << allClientTimings[i].key_gen.t_ecdh_ms << ","
+                   << allClientTimings[i].key_gen.t_total_ms << ","
+                   << allClientTimings[i].t_encrypt_ms << ","
+                   << allClientTimings[i].t_partial_dec_ms << ","
+                   << allClientTimings[i].t_mask_gen_ms << ","
+                   << allClientTimings[i].t_client_total_ms << "\n";
     }
-
-    // Determine the maximum error between the expected and actual result.
-    double max_error = 0.0;
-    for (size_t i = 0; i < dataSize; ++i) {
-        double error = std::abs(expected_sum[i] - finalResult[i]);
-        if (error > max_error) {
-            max_error = error;
-        }
-    }
-
-    // --- 6. Report Timings and Final Result ---
-    std::cout << "\n--- Performance Summary ---" << std::endl;
-    // Find the maximum time from all clients for each operation.
-    double max_keygen_us = *std::max_element(keygen_times.begin(), keygen_times.end());
-    double max_share_gen_us = *std::max_element(share_gen_times.begin(), share_gen_times.end());
-
-    std::cout << "Max client key generation time: " << max_keygen_us / 1000.0 << " ms" << std::endl;
-    std::cout << "Max client share generation time: " << max_share_gen_us / 1000.0 << " ms" << std::endl;
-    std::cout << "Server final decode time: " << decode_duration_ms << " ms" << std::endl;
-    std::cout << "Detailed timings logged to 'timing_log.txt'" << std::endl;
-
-    std::cout << "\n--- Final Result ---" << std::endl;
-    std::cout << std::fixed << std::setprecision(5);
-    std::cout << "Maximum absolute error: " << max_error << std::endl;
-    // Use a small tolerance for floating-point comparison.
-    if (max_error < 0.001) {
-        std::cout << "✅ SUCCESS: The final aggregated result is correct." << std::endl;
-    } else {
-        std::cout << "❌ FAILURE: The final result has a large error." << std::endl;
-    }
-
-    return 0;
+    server_log << numClients << "," << dataSize << "," << ringDimension << ","
+               << server_result.timings.t_aggregate_ms << ","
+               << server_result.timings.t_decode_ms << ","
+               << server_result.timings.t_server_total_ms << "\n";
+    
+    // NOTE: Console printing is omitted here to keep the main loop clean.
+    // The focus is on generating the comprehensive CSV logs.
 }

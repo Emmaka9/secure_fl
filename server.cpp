@@ -1,9 +1,27 @@
 // server.cpp
 //
-// Implementation of the Server class.
+// Implementation of the Server class, now with timing capabilities.
 
 #include "server.h"
 #include "mk_ckks.h" // Include the crypto engine
+
+// A simple timer utility.
+class Timer {
+public:
+    // Starts the timer.
+    void Start() {
+        m_StartTime = std::chrono::high_resolution_clock::now();
+    }
+    // Stops the timer and returns the duration in milliseconds.
+    double Stop() {
+        auto endTime = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double, std::milli> duration = endTime - m_StartTime;
+        return duration.count();
+    }
+private:
+    std::chrono::time_point<std::chrono::high_resolution_clock> m_StartTime;
+};
+
 
 Server::Server() {}
 
@@ -11,32 +29,46 @@ void Server::collectShare(const ClientShare& share) {
     m_clientShares.push_back(share);
 }
 
+// This function performs the homomorphic additions on the collected shares.
 DCRTPoly Server::aggregateShares() {
     if (m_clientShares.empty()) {
         throw std::runtime_error("No client shares to aggregate.");
     }
 
-    DCRTPoly result = m_clientShares[0].c0;
+    // Sum all the c0 components from each client's ciphertext.
+    DCRTPoly result_c0 = m_clientShares[0].c0;
     for (size_t i = 1; i < m_clientShares.size(); ++i) {
-        result += m_clientShares[i].c0;
+        result_c0 += m_clientShares[i].c0;
     }
-    // The server sums the MASKED shares. The masks will cancel out.
-    //DCRTPoly result1 = m_clientShares[0].d_masked;
-    for (const auto& share : m_clientShares) {
-        result += share.d_masked;
+
+    // Sum all the masked d components from each client's share.
+    // The masks are designed to sum to zero, leaving the sum of partial decryptions.
+    DCRTPoly result_d_masked = m_clientShares[0].d_masked;
+    for (size_t i = 1; i < m_clientShares.size(); ++i) {
+        result_d_masked += m_clientShares[i].d_masked;
     }
-    //std::cout << "Server: result1: " << result1 << std::endl;
-    return result; // + result1;
+    
+    // The final raw polynomial is Sum(c0_i) + Sum(d_masked_i).
+    // This is equivalent to Sum(c0_i + d_i), which decrypts to Sum(m_i).
+    return result_c0 + result_d_masked;
 }
 
-std::vector<double> Server::getFinalResult(CryptoContext<DCRTPoly>& cc, uint32_t dataSize) {
-    // 1. Aggregate all the collected shares into a single raw polynomial.
-    DCRTPoly finalPoly = aggregateShares();
-    std::cout << "Server has aggregated all shares." << std::endl;
+// MODIFIED: The function now returns a ServerResult struct and measures performance.
+ServerResult Server::getFinalResult(CryptoContext<DCRTPoly>& cc, uint32_t dataSize) {
+    ServerResult result;
+    Timer timer;
 
-    // 2. Call the crypto engine to decode the raw polynomial into a vector of doubles.
-    std::vector<double> finalResult = Decode(finalPoly, cc, dataSize);
-    std::cout << "Server has decoded the final result." << std::endl;
+    // --- 1. Measure Share Aggregation Time (T_aggregate) ---
+    timer.Start();
+    DCRTPoly finalPoly = aggregateShares();
+    result.timings.t_aggregate_ms = timer.Stop();
+    // std::cout << "Server has aggregated all shares." << std::endl; // Moved to main loop
+
+    // --- 2. Measure Final Decoding Time (T_decode) ---
+    timer.Start();
+    result.final_aggregated_vector = Decode(finalPoly, cc, dataSize);
+    result.timings.t_decode_ms = timer.Stop();
+    // std::cout << "Server has decoded the final result." << std::endl; // Moved to main loop
     
-    return finalResult;
+    return result;
 }

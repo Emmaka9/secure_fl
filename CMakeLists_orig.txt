@@ -1,0 +1,71 @@
+# CMake minimum version requirement
+cmake_minimum_required(VERSION 3.10)
+
+# Project Name
+project(SecureAggregationSimulator)
+
+# Set C++ standard
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# --- Find Required Packages (Classic Method) ---
+find_package(OpenFHE CONFIG REQUIRED)
+find_package(OpenSSL REQUIRED)
+find_package(OpenMP)
+
+message(STATUS "Found OpenFHE Version: ${OpenFHE_VERSION}")
+message(STATUS "Found OpenSSL Version: ${OPENSSL_VERSION}")
+
+# --- Define Source Files ---
+# List common source files to avoid repeating them for each target.
+set(COMMON_SOURCES
+    mk_ckks.cpp
+    masking.cpp
+    client.cpp
+)
+
+# --- Build Main Executable ---
+add_executable(secure_aggregation_sim
+    main.cpp
+    server.cpp
+    ${COMMON_SOURCES}
+)
+
+# --- Build Debugging Executable ---
+add_executable(debug_masking
+    test_debug.cpp
+    ${COMMON_SOURCES}
+)
+
+# --- Link Libraries and Set Include Directories for Both Targets ---
+# This list applies to both executables we define.
+set(TARGETS secure_aggregation_sim debug_masking)
+
+foreach(TARGET ${TARGETS})
+    # Link OpenFHE using the variable method, which is compatible with your system.
+    target_link_libraries(${TARGET} PRIVATE
+        ${OpenFHE_LIBRARIES}
+        OpenSSL::SSL
+        OpenSSL::Crypto
+    )
+
+    # Add OpenMP if it was found
+    if(OpenMP_FOUND)
+        target_link_libraries(${TARGET} PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+
+    # Apply include directories directly to each target.
+    # This ensures the compiler knows where to find "openfhe.h".
+    target_include_directories(${TARGET} PRIVATE
+        ${OpenFHE_INCLUDE_DIRS}
+        ${OPENSSL_INCLUDE_DIR}
+    )
+endforeach()
+
+if(OpenMP_FOUND)
+    message(STATUS "OpenMP found, enabling parallel execution.")
+else()
+    message(WARNING "OpenMP not found. The simulation will run on a single core.")
+endif()
+
+message(STATUS "SUCCESS: Configuration complete.")
