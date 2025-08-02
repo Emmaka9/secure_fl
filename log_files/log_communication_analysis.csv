@@ -1,2 +1,2 @@
 Experiment,NumClients,DataSize,RingDimension,PlaintextBytes,CiphertextBytes,ClientUplinkBytes,SetupBytes,FinalDownlinkBytes,CiphertextExpansion,CommExpansion
-ScalingClients,10,65536,131072,524288,6292280,6292280,440,524288,12.0016,12.1017
+ScalingClients,50,4096,16384,32768,787256,787256,2200,32768,24.0251,24.0465

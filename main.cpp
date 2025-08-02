@@ -26,8 +26,8 @@ const uint32_t FIXED_RING_DIM_FOR_EXP1 = 131072; // 2^17
 
 // --- Experiment 2: Scaling Data Size ---
 const int FIXED_CLIENT_COUNT_FOR_EXP2 = 500;
-const std::vector<uint32_t> DATA_SIZES = {4096, 8192, 16384, 32768, 65536};
-const std::vector<uint32_t> RING_DIMENSIONS = {16384, 16384, 32768, 65536, 131072};
+const std::vector<uint32_t> DATA_SIZES = {4096, 8192, 16384, 32768, 65536, 131072};
+const std::vector<uint32_t> RING_DIMENSIONS = {16384, 16384, 32768, 65536, 131072, 262144};
 
 
 // =================================================================================
@@ -48,7 +48,6 @@ size_t get_mkciphertext_size(CryptoContext<DCRTPoly>& cc, const DCRTPoly& crs_a)
     MKeyGenKeyPair dummy_keys = KeyGenSingle(cc, crs_a);
     
     // Perform a standard encryption to get a representative ciphertext object.
-    // We use the full Encrypt function to ensure the object is identical in structure.
     MKCiphertext ct = Encrypt(cc, dummy_keys.pk, dummy_keys.sk, dummy_plaintext);
 
     // Serialize the object into an in-memory stream and return its size.
@@ -73,17 +72,13 @@ size_t get_client_share_size(const ClientShare& share) {
     return ss.str().size();
 }
 
-
-
-
-
-
 // =================================================================================
 // FORWARD DECLARATION of the main experiment runner function
 // =================================================================================
-void run_experiment(int numClients, uint32_t dataSize, uint32_t ringDimension,
-                    std::ofstream& compute_client_log, std::ofstream& compute_server_log,
-                    std::ofstream& comm_log);
+void run_experiment(const std::string& experiment_name,
+                      int numClients, uint32_t dataSize, uint32_t ringDimension,
+                      std::ofstream& compute_client_log, std::ofstream& compute_server_log,
+                      std::ofstream& comm_log);
 
 
 
@@ -122,12 +117,9 @@ int main() {
               << "\n--- EXPERIMENT 1: SCALING NUMBER OF CLIENTS (Data Size = " << FIXED_DATA_SIZE_FOR_EXP1 << ") ---"
               << "\n==================================================================================" << std::endl;
     
-    // -------------------------------------------------------------------------------------
-    //std::cout << "This is Test to see if 2^17 datasize will run (ring dim 2^18)" << std::endl;
-    //run_experiment(500, 131072, 262144, compute_client_log, compute_server_log, comm_log);
-    
     for (int numClients : CLIENT_COUNTS) {
-        run_experiment(numClients, FIXED_DATA_SIZE_FOR_EXP1, FIXED_RING_DIM_FOR_EXP1, compute_client_log, compute_server_log, comm_log);
+        // Call run_experiment with the explicit name for this experiment.
+        run_experiment("ScalingClients", numClients, FIXED_DATA_SIZE_FOR_EXP1, FIXED_RING_DIM_FOR_EXP1, compute_client_log, compute_server_log, comm_log);
     }
 
     // ============================================================================
@@ -138,7 +130,8 @@ int main() {
               << "\n============================================================================" << std::endl;
 
     for (size_t i = 0; i < DATA_SIZES.size(); ++i) {
-        run_experiment(FIXED_CLIENT_COUNT_FOR_EXP2, DATA_SIZES[i], RING_DIMENSIONS[i], compute_client_log, compute_server_log, comm_log);
+        // Call run_experiment with the explicit name for this experiment.
+        run_experiment("ScalingDataSize", FIXED_CLIENT_COUNT_FOR_EXP2, DATA_SIZES[i], RING_DIMENSIONS[i], compute_client_log, compute_server_log, comm_log);
     }
 
     // --- Cleanup ---
@@ -155,17 +148,19 @@ int main() {
 
 
 
+
 // =================================================================================
-// CORE EXPERIMENT RUNNER FUNCTION (CORRECTED STREAMING + CONSOLE SUMMARY)
+// CORE EXPERIMENT RUNNER FUNCTION
 // =================================================================================
-void run_experiment(int numClients, uint32_t dataSize, uint32_t ringDimension,
+void run_experiment(const std::string& experiment_name,
+                      int numClients, uint32_t dataSize, uint32_t ringDimension,
                       std::ofstream& compute_client_log, std::ofstream& compute_server_log,
                       std::ofstream& comm_log) {
     
-    std::cout << "\n--- Running with N=" << numClients << ", d=" << dataSize << ", N_poly=" << ringDimension << " ---" << std::endl;
+    std::cout << "\n--- Running " << experiment_name 
+              << " with N=" << numClients << ", d=" << dataSize 
+              << ", N_poly=" << ringDimension << " ---" << std::endl;
     
-    std::string experiment_type = (numClients == FIXED_CLIENT_COUNT_FOR_EXP2) ? "ScalingDataSize" : "ScalingClients";
-
     // --- A. Per-Run CryptoContext Generation ---
     CCParams<CryptoContextCKKSRNS> parameters;
     parameters.SetRingDim(ringDimension);
@@ -184,8 +179,7 @@ void run_experiment(int numClients, uint32_t dataSize, uint32_t ringDimension,
     std::cout << "Generating keys for all " << numClients << " clients..." << std::endl;
     for (int i = 0; i < numClients; ++i) {
         clients.emplace_back(i);
-        KeyGenTimings timings_output_not_used;
-        clients[i].generateKeys(cc, crs_a, timings_output_not_used);
+        clients[i].generateKeys(cc, crs_a);
     }
     
     std::map<uint32_t, ECDHPublicKey> allPublicKeys;
@@ -195,31 +189,22 @@ void run_experiment(int numClients, uint32_t dataSize, uint32_t ringDimension,
     std::cout << "Setup and KeyGen complete." << std::endl;
 
     ClientShare representative_share;
-    
-    // This variable will be used to hold the timing results of the most recently
-    // processed client. After the loop finishes, it will contain the results for
-    // the final client, which we can then display in our console summary.
     ClientTimings last_client_timings;
 
     // --- C & F. STREAMING: Process, Aggregate, and Log One Client at a Time ---
     for (int i = 0; i < numClients; ++i) {
         clients[i].generateData(dataSize, -999.0, 999.0);
-
         ClientResult client_result = clients[i].prepareShareForServer(cc, allPublicKeys);
-
         server.collectShare(client_result.share);
         
         if (i == 0) {
             representative_share = client_result.share;
         }
 
-        // Overwrite 'last_client_timings' with the current client's data.
-        // On each iteration, this variable is updated, ensuring that after the
-        // loop concludes, it holds the data from the very last client.
         last_client_timings = client_result.timings;
         
-        // Immediately log the full, correct timing data to the client log file.
-        compute_client_log << experiment_type << "," << numClients << "," << dataSize << "," << ringDimension << "," << i << ","
+        // Log timing data using the explicit experiment_name.
+        compute_client_log << experiment_name << "," << numClients << "," << dataSize << "," << ringDimension << "," << i << ","
                              << last_client_timings.key_gen.t_mkckks_ms << ","
                              << last_client_timings.key_gen.t_ecdh_ms << ","
                              << last_client_timings.key_gen.t_total_ms << ","
@@ -250,20 +235,17 @@ void run_experiment(int numClients, uint32_t dataSize, uint32_t ringDimension,
     double comm_expansion = (double)total_secure_comm_per_client / plaintext_bytes;
 
     // --- F. LOGGING (Server and Communication logs) ---
-    compute_server_log << experiment_type << "," << numClients << "," << dataSize << "," << ringDimension << ","
+    compute_server_log << experiment_name << "," << numClients << "," << dataSize << "," << ringDimension << ","
                        << server_result.timings.t_aggregate_ms << ","
                        << server_result.timings.t_decode_ms << ","
                        << server_result.timings.t_server_total_ms << std::endl;
 
-    comm_log << experiment_type << "," << numClients << "," << dataSize << "," << ringDimension << ","
+    comm_log << experiment_name << "," << numClients << "," << dataSize << "," << ringDimension << ","
              << plaintext_bytes << "," << ciphertext_bytes << "," << client_uplink_bytes << ","
              << setup_bytes << "," << final_downlink_bytes << ","
              << ciphertext_expansion << "," << comm_expansion << std::endl;
     
-    // --- G. CONSOLE SUMMARY (Now displays the last client's timing results) ---
-    // Since 'last_client_timings' was updated in every loop iteration, it now
-    // contains the performance metrics of the final client, providing a useful
-    // sample of the computation cost for this specific experiment run.
+    // --- G. CONSOLE SUMMARY ---
     std::cout << "  Computation Summary (Last Client):\n"
               << "    - T_Encrypt: " << last_client_timings.t_encrypt_ms << " ms\n"
               << "    - T_MaskGen: " << last_client_timings.t_mask_gen_ms << " ms\n";
@@ -272,3 +254,4 @@ void run_experiment(int numClients, uint32_t dataSize, uint32_t ringDimension,
               << "    - Ciphertext Expansion Factor: " << std::fixed << std::setprecision(2) << ciphertext_expansion << "x\n"
               << "    - Communication Expansion Factor: " << comm_expansion << "x\n";
 }
+
