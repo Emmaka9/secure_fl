@@ -1,2 +1,2 @@
 Experiment,NumClients,DataSize,RingDimension,T_Aggregate_ms,T_Decode_ms,T_ServerTotal_ms
-ScalingClients,50,4096,16384,3.69133,43.8526,47.5439
+ScalingClients,10,65536,131072,25.9681,385.065,411.033

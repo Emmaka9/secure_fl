@@ -15,20 +15,52 @@
 #include <filesystem>
 #include <sstream> // Required for serialization to in-memory streams
 
+
+
+/**
+ * @brief Calculates the smallest power of two that is greater than or equal to n.
+ * This is crucial for determining the required batch size for the CKKS scheme,
+ * which must be a power of two to support the underlying NTT/FFT operations.
+ *
+ * @param n The input data size.
+ * @return uint32_t The next power of two.
+ */
+uint32_t next_power_of_2(uint32_t n) {
+    // If n is already a power of two, we don't need to do anything.
+    // The check (n & (n - 1)) == 0 is a standard bitwise trick to identify powers of two.
+    if (n > 0 && (n & (n - 1)) == 0) {
+        return n;
+    }
+
+    // This sequence of bitwise OR operations ensures that all bits to the right
+    // of the most significant bit are set to 1.
+    // For example, if n = 60000 (binary: 1110101001100000), this process
+    // will transform it into 1111111111111111.
+    n--; // Decrement n to handle the case where n is already a power of two.
+    n |= n >> 1;
+    n |= n >> 2;
+    n |= n >> 4;
+    n |= n >> 8;
+    n |= n >> 16;
+
+    // Incrementing the result gives us the next highest power of two.
+    // For our example, this turns 1111111111111111 into 10000000000000000 (65536).
+    n++;
+
+    return n;
+}
+
 // =================================================================================
 // EXPERIMENT CONFIGURATION
 // =================================================================================
 
 // --- Experiment 1: Scaling Number of Clients ---
-const std::vector<int> CLIENT_COUNTS = {10, 50, 100, 200, 300, 500};
+const std::vector<int> CLIENT_COUNTS = {10, 50, 100, 200, 350, 500};
 const uint32_t FIXED_DATA_SIZE_FOR_EXP1 = 65536;
-const uint32_t FIXED_RING_DIM_FOR_EXP1 = 131072; // 2^17
 
 // --- Experiment 2: Scaling Data Size ---
 const int FIXED_CLIENT_COUNT_FOR_EXP2 = 500;
-const std::vector<uint32_t> DATA_SIZES = {4096, 8192, 16384, 32768, 65536, 131072};
-const std::vector<uint32_t> RING_DIMENSIONS = {16384, 16384, 32768, 65536, 131072, 262144};
-
+const std::vector<uint32_t> DATA_SIZES = {4095, 8192, 16384, 32768, 65536};
 
 // =================================================================================
 // HELPER FUNCTIONS FOR COMMUNICATION COST MEASUREMENT
@@ -76,9 +108,78 @@ size_t get_client_share_size(const ClientShare& share) {
 // FORWARD DECLARATION of the main experiment runner function
 // =================================================================================
 void run_experiment(const std::string& experiment_name,
-                      int numClients, uint32_t dataSize, uint32_t ringDimension,
+                      int numClients, uint32_t dataSize,
                       std::ofstream& compute_client_log, std::ofstream& compute_server_log,
                       std::ofstream& comm_log);
+
+
+
+
+// // +++++++++++++++++++++++ Verification ++++++++++++++++++++++++++++++++
+// // =================================================================================
+// // MAIN ORCHESTRATOR (MODIFIED FOR A SINGLE TEST RUN)
+// // =================================================================================
+
+// int main() {
+//     std::cout << "🚀 Starting Secure Aggregation Performance Evaluation Harness" << std::endl;
+//     std::cout << "--- RUNNING IN SINGLE TEST MODE ---" << std::endl;
+
+//     // --- Setup Log Directory (No changes here) ---
+//     std::string log_dir = "../log_files";
+//     try {
+//         std::filesystem::create_directory(log_dir);
+//     } catch (const std::filesystem::filesystem_error& e) {
+//         std::cerr << "Error creating log directory: " << e.what() << std::endl;
+//         return 1;
+//     }
+
+//     // --- Setup Log Files (No changes here) ---
+//     std::ofstream compute_client_log(log_dir + "/log_computation_client.csv");
+//     compute_client_log << "Experiment,NumClients,DataSize,RingDimension,ClientID,T_KeyGen_MKCKKS_ms,T_KeyGen_ECDH_ms,T_KeyGen_Total_ms,T_Encrypt_ms,T_MaskGen_ms,T_ClientTotal_ms\n";
+    
+//     std::ofstream compute_server_log(log_dir + "/log_computation_server.csv");
+//     compute_server_log << "Experiment,NumClients,DataSize,RingDimension,T_Aggregate_ms,T_Decode_ms,T_ServerTotal_ms\n";
+
+//     std::ofstream comm_log(log_dir + "/log_communication_analysis.csv");
+//     comm_log << "Experiment,NumClients,DataSize,RingDimension,PlaintextBytes,CiphertextBytes,ClientUplinkBytes,SetupBytes,FinalDownlinkBytes,CiphertextExpansion,CommExpansion\n";
+
+//     // ============================================================================
+//     // --- SINGLE TEST RUN ---
+//     // The original experiment loops are commented out for this test.
+//     // ============================================================================
+
+//     std::cout << "\n\n=================================================================================="
+//               << "\n--- VERIFICATION TEST: Running a single demanding experiment ---"
+//               << "\n==================================================================================" << std::endl;
+    
+//     // We are calling run_experiment directly, now including the required experiment_name parameter.
+//     run_experiment("VerificationTest", 500, 131072, 262144, compute_client_log, compute_server_log, comm_log);
+
+//     /*
+//     // --- EXPERIMENT 1: SCALING NUMBER OF CLIENTS --- (Commented out)
+//     for (int numClients : CLIENT_COUNTS) {
+//         run_experiment("ScalingClients", numClients, FIXED_DATA_SIZE_FOR_EXP1, FIXED_RING_DIM_FOR_EXP1, compute_client_log, compute_server_log, comm_log);
+//     }
+
+//     // --- EXPERIMENT 2: SCALING DATA SIZE --- (Commented out)
+//     for (size_t i = 0; i < DATA_SIZES.size(); ++i) {
+//         run_experiment("ScalingDataSize", FIXED_CLIENT_COUNT_FOR_EXP2, DATA_SIZES[i], RING_DIMENSIONS[i], compute_client_log, compute_server_log, comm_log);
+//     }
+//     */
+
+//     // --- Cleanup ---
+//     compute_client_log.close();
+//     compute_server_log.close();
+//     comm_log.close();
+
+//     std::cout << "\n\n🎉 Test run finished successfully!" << std::endl;
+//     std::cout << "Please check the 'log_files' directory and console output for verification." << std::endl;
+    
+//     return 0;
+// }
+
+// //++++++++++++++++++++++ End Verification ++++++++++++++++++++++++++
+
 
 
 
@@ -119,7 +220,7 @@ int main() {
     
     for (int numClients : CLIENT_COUNTS) {
         // Call run_experiment with the explicit name for this experiment.
-        run_experiment("ScalingClients", numClients, FIXED_DATA_SIZE_FOR_EXP1, FIXED_RING_DIM_FOR_EXP1, compute_client_log, compute_server_log, comm_log);
+        run_experiment("ScalingClients", numClients, FIXED_DATA_SIZE_FOR_EXP1, compute_client_log, compute_server_log, comm_log);
     }
 
     // ============================================================================
@@ -131,7 +232,7 @@ int main() {
 
     for (size_t i = 0; i < DATA_SIZES.size(); ++i) {
         // Call run_experiment with the explicit name for this experiment.
-        run_experiment("ScalingDataSize", FIXED_CLIENT_COUNT_FOR_EXP2, DATA_SIZES[i], RING_DIMENSIONS[i], compute_client_log, compute_server_log, comm_log);
+        run_experiment("ScalingDataSize", FIXED_CLIENT_COUNT_FOR_EXP2, DATA_SIZES[i], compute_client_log, compute_server_log, comm_log);
     }
 
     // --- Cleanup ---
@@ -149,13 +250,19 @@ int main() {
 
 
 
+
+
 // =================================================================================
 // CORE EXPERIMENT RUNNER FUNCTION
 // =================================================================================
-void run_experiment(const std::string& experiment_name,
-                      int numClients, uint32_t dataSize, uint32_t ringDimension,
-                      std::ofstream& compute_client_log, std::ofstream& compute_server_log,
+void run_experiment(const std::string& experiment_name, int numClients, uint32_t dataSize, 
+                      std::ofstream& compute_client_log,
+                      std::ofstream& compute_server_log, 
                       std::ofstream& comm_log) {
+
+    uint32_t batchSize = next_power_of_2(dataSize);
+    uint32_t ringDimension = 2 * batchSize; // Ensure ring dimension is at least double the batch size for ckks scheme.
+
     
     std::cout << "\n--- Running " << experiment_name 
               << " with N=" << numClients << ", d=" << dataSize 
@@ -166,7 +273,7 @@ void run_experiment(const std::string& experiment_name,
     parameters.SetRingDim(ringDimension);
     parameters.SetMultiplicativeDepth(1);
     parameters.SetScalingModSize(50);
-    parameters.SetBatchSize(dataSize);
+    parameters.SetBatchSize(batchSize);
     CryptoContext<DCRTPoly> cc = GenCryptoContext(parameters);
     cc->Enable(PKE);
 
@@ -254,4 +361,3 @@ void run_experiment(const std::string& experiment_name,
               << "    - Ciphertext Expansion Factor: " << std::fixed << std::setprecision(2) << ciphertext_expansion << "x\n"
               << "    - Communication Expansion Factor: " << comm_expansion << "x\n";
 }
-
