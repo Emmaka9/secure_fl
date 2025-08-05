@@ -261,8 +261,13 @@ void run_experiment(const std::string& experiment_name, int numClients, uint32_t
                       std::ofstream& comm_log) {
 
     uint32_t batchSize = next_power_of_2(dataSize);
-    uint32_t ringDimension = 2 * batchSize; // Ensure ring dimension is at least double the batch size for ckks scheme.
-
+    uint32_t ringDimension;
+    if (batchSize < 16384){
+        ringDimension = 16384;
+    }
+    else{
+        ringDimension = 2 * batchSize;
+    }
     
     std::cout << "\n--- Running " << experiment_name 
               << " with N=" << numClients << ", d=" << dataSize 
