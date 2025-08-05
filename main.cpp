@@ -55,12 +55,12 @@ uint32_t next_power_of_2(uint32_t n) {
 // =================================================================================
 
 // --- Experiment 1: Scaling Number of Clients ---
-const std::vector<int> CLIENT_COUNTS = {10, 50, 100, 200, 350, 500};
+const std::vector<int> CLIENT_COUNTS = {10, 50, 100, 200, 350};
 const uint32_t FIXED_DATA_SIZE_FOR_EXP1 = 65536;
 
 // --- Experiment 2: Scaling Data Size ---
 const int FIXED_CLIENT_COUNT_FOR_EXP2 = 500;
-const std::vector<uint32_t> DATA_SIZES = {4095, 8192, 16384, 32768, 65536};
+const std::vector<uint32_t> DATA_SIZES = {4095, 8192, 16384, 32768, 50000, 65536};
 
 // =================================================================================
 // HELPER FUNCTIONS FOR COMMUNICATION COST MEASUREMENT
