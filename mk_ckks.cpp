@@ -43,9 +43,18 @@ DCRTPoly encodeVector(CryptoContext<DCRTPoly>& cc, const std::vector<double>& ve
 }
 
 /**
- * @brief Encrypts a plaintext polynomial.
+ * @brief MODIFIED: Encrypts a plaintext and immediately computes the partial decryption share.
+ * This function now correctly takes the secret key `sk` as an argument to perform its calculation.
+ * @param cc The crypto context.
+ * @param pk The public key of the client.
+ * @param sk The secret key of the client.
+ * @param m The plaintext polynomial to encrypt.
+ * @return An MKCiphertext struct where c1 is the partial decryption share 'd'.
  */
-MKCiphertext Encrypt(CryptoContext<DCRTPoly>& cc, const MKeyGenPublicKey& pk, const DCRTPoly& m) {
+MKCiphertext Encrypt(CryptoContext<DCRTPoly>& cc, 
+                    const MKeyGenPublicKey& pk, 
+                    const MKeyGenSecretKey& sk, // sk is now available
+                    const DCRTPoly& m) {
     auto cryptoParams = std::dynamic_pointer_cast<const CryptoParametersRNS>(cc->GetCryptoParameters());
     auto params = cc->GetCryptoParameters()->GetElementParams();
     auto& dgg = cryptoParams->GetDiscreteGaussianGenerator();
@@ -60,49 +69,36 @@ MKCiphertext Encrypt(CryptoContext<DCRTPoly>& cc, const MKeyGenPublicKey& pk, co
     }
 
     MKCiphertext ct;
+    // Compute c0 as usual
     ct.c0 = v * pk.b + m_ntt + e0;
-    ct.c1 = v * pk.a + e1;
+    
+    // Compute the intermediate c1
+    DCRTPoly intermediate_c1 = v * pk.a + e1;
+
+    // Define the large decryption noise
+    DiscreteGaussianGeneratorImpl<NativeVector> dgg_large_variance(4.0);
+    DCRTPoly e_star(dgg_large_variance, params, Format::EVALUATION);
+
+    // Compute the final second component, which is the partial decryption share d.
+    // This now works because `sk` is passed into the function.
+    ct.c1 = intermediate_c1 * sk.s + e_star;
 
     return ct;
 }
 
 /**
- * @brief Computes a client's partial decryption polynomial 'd'.
- */
-DCRTPoly ComputePartialDecryption(CryptoContext<DCRTPoly>& cc, const MKeyGenSecretKey& sk, const MKCiphertext& ct) {
-    auto params = cc->GetCryptoParameters()->GetElementParams();
-    
-    DiscreteGaussianGeneratorImpl<NativeVector> dgg_large_variance(4.0);
-    DCRTPoly e_star(dgg_large_variance, params, Format::EVALUATION);
-
-    // Return just the polynomial d = c1*s + e*
-    return ct.c1 * sk.s + e_star;
-}
-
-
-/**
  * @brief Decodes a raw DCRTPoly back into a vector of doubles using the OpenFHE API.
  */
 std::vector<double> Decode(const DCRTPoly& finalPoly, CryptoContext<DCRTPoly>& cc, uint32_t dataSize) {
-    // 1. Generate a temporary, standard keypair to create valid crypto objects.
     KeyPair<DCRTPoly> tempKeys = cc->KeyGen();
-
-    // 2. Encrypt a dummy value to get a fully-formed, valid Ciphertext object.
     std::vector<double> dummy_vec = {0.0};
     Plaintext ptxt_template = cc->MakeCKKSPackedPlaintext(dummy_vec);
     Ciphertext<DCRTPoly> dummyCiphertext = cc->Encrypt(tempKeys.publicKey, ptxt_template);
-
-    // 3. Overwrite the contents of this valid ciphertext with our data.
     auto params = cc->GetCryptoParameters()->GetElementParams();
-    DCRTPoly c1_zero(params, Format::EVALUATION, true); // true initializes to zero
+    DCRTPoly c1_zero(params, Format::EVALUATION, true);
     dummyCiphertext->SetElements({finalPoly, c1_zero});
-
-    // 4. Call the standard Decrypt function. It computes `c0 + c1*s`, which is just `c0`
-    // since `c1` is zero. It then handles the wrapping and decoding.
     Plaintext resultPlaintext;
     cc->Decrypt(tempKeys.secretKey, dummyCiphertext, &resultPlaintext);
-
-    // 5. Extract and return the final vector of doubles.
     resultPlaintext->SetLength(dataSize);
     return resultPlaintext->GetRealPackedValue();
 }

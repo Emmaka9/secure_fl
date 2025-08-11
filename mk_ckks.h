@@ -16,10 +16,15 @@ MKeyGenKeyPair KeyGenSingle(CryptoContext<DCRTPoly>& cc, const DCRTPoly& crs_a);
 
 DCRTPoly encodeVector(CryptoContext<DCRTPoly>& cc, const std::vector<double>& vec);
 
-MKCiphertext Encrypt(CryptoContext<DCRTPoly>& cc, const MKeyGenPublicKey& pk, const DCRTPoly& m);
+// MODIFIED: The function signature now correctly accepts the secret key (sk)
+// which is necessary to perform the integrated partial decryption step.
+MKCiphertext Encrypt(CryptoContext<DCRTPoly>& cc, 
+                    const MKeyGenPublicKey& pk, 
+                    const MKeyGenSecretKey& sk, // Added secret key parameter
+                    const DCRTPoly& m);
 
-// FIX: This function now correctly returns only the partial decryption polynomial.
-DCRTPoly ComputePartialDecryption(CryptoContext<DCRTPoly>& cc, const MKeyGenSecretKey& sk, const MKCiphertext& ct);
+// This function is now obsolete and has been fully commented out.
+// DCRTPoly ComputePartialDecryption(CryptoContext<DCRTPoly>& cc, const MKeyGenSecretKey& sk, const MKCiphertext& ct);
 
 std::vector<double> Decode(const DCRTPoly& finalPoly, CryptoContext<DCRTPoly>& cc, uint32_t dataSize);
 

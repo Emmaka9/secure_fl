@@ -21,31 +21,33 @@ void EVP_PKEY_Deleter::operator()(EVP_PKEY* pkey) const {
 }
 
 /**
- * @brief Generates a fresh ECDH key pair using the secp384r1 curve.
+ * @brief MODIFIED: Generates a fresh key pair using the X25519 curve.
+ * X25519 is a modern, high-performance, and safer-by-design elliptic curve
+ * that provides a 128-bit security level, aligning well with the FHE scheme.
  * @return A SafePKey (smart pointer) containing the newly generated key pair.
  */
 SafePKey GenerateECDHKeys() {
-    // Create a parameter generation context for EC keys.
-    EVP_PKEY_CTX* pctx = EVP_PKEY_CTX_new_id(EVP_PKEY_EC, NULL);
-    if (!pctx) throw std::runtime_error("Failed to create EVP_PKEY_CTX");
+    // --- MODIFICATION START ---
+    // Instead of creating a generic EC context, we create one specifically
+    // for the X25519 algorithm.
+    EVP_PKEY_CTX* pctx = EVP_PKEY_CTX_new_id(EVP_PKEY_X25519, NULL);
+    if (!pctx) throw std::runtime_error("Failed to create EVP_PKEY_CTX for X25519");
 
     // Initialize the key generation process.
     if (EVP_PKEY_keygen_init(pctx) <= 0) {
         EVP_PKEY_CTX_free(pctx);
-        throw std::runtime_error("Failed to initialize keygen");
+        throw std::runtime_error("Failed to initialize keygen for X25519");
     }
 
-    // Set the elliptic curve to use. secp384r1 is a standard, secure curve.
-    if (EVP_PKEY_CTX_set_ec_paramgen_curve_nid(pctx, NID_secp384r1) <= 0) {
-        EVP_PKEY_CTX_free(pctx);
-        throw std::runtime_error("Failed to set EC curve");
-    }
+    // The step of setting a specific curve name (like secp384r1) is no longer
+    // needed, as the key type itself defines the curve.
+    // --- MODIFICATION END ---
 
     // Generate the key pair.
     EVP_PKEY* pkey = NULL;
     if (EVP_PKEY_keygen(pctx, &pkey) <= 0) {
         EVP_PKEY_CTX_free(pctx);
-        throw std::runtime_error("Failed to generate key pair");
+        throw std::runtime_error("Failed to generate X25519 key pair");
     }
 
     EVP_PKEY_CTX_free(pctx);
@@ -55,6 +57,7 @@ SafePKey GenerateECDHKeys() {
 
 /**
  * @brief Serializes an OpenSSL public key into a byte vector for network transmission.
+ * This function is generic and works for X25519 keys as well.
  * @param keys A SafePKey containing the key pair.
  * @return A byte vector (ECDHPublicKey) holding the serialized public key.
  */
@@ -72,6 +75,7 @@ ECDHPublicKey SerializePublicKey(const SafePKey& keys) {
 
 /**
  * @brief Deserializes a byte vector back into a usable OpenSSL public key object.
+ * This function is generic and works for X25519 keys as well.
  * @param pubKeyBytes The byte vector containing the serialized key.
  * @return A SafePKey holding the deserialized public key.
  */
@@ -87,6 +91,7 @@ SafePKey DeserializePublicKey(const ECDHPublicKey& pubKeyBytes) {
 
 /**
  * @brief Computes a shared secret using my private key and a peer's public key (ECDH).
+ * This function is generic and works for X25519 keys as well.
  * @param myKeys My key pair (containing my private key).
  * @param peerPubKey The public key of the other party.
  * @return A byte vector containing the derived shared secret.
@@ -170,26 +175,16 @@ DCRTPoly PRGToDCRTPoly(const std::vector<unsigned char>& seed, CryptoContext<DCR
 
     // Iterate through each tower (each prime modulus in the RNS representation).
     for (size_t i = 0; i < params->GetParams().size(); ++i) {
-        // Get the parameters for the current RNS tower.
         auto tower_params = params->GetParams()[i];
-        
-        // Create the vector that will hold the coefficients for this tower.
         NativeVector tower_vec(params->GetRingDimension(), tower_params->GetModulus());
         const NativeInteger& modulus = tower_params->GetModulus();
         
-        // For each coefficient in the tower...
         for (size_t j = 0; j < params->GetRingDimension(); ++j) {
-            // The random 64-bit integer must be reduced by the tower's modulus
-            // to be a valid coefficient in that finite field.
             tower_vec[j] = NativeInteger(random_uints[uints_offset + j]) % modulus;
         }
 
-        // *** FIX: Wrap the vector in a NativePoly object before setting it. ***
-        // A DCRTPoly is composed of NativePoly elements, not raw NativeVectors.
         NativePoly tower_poly(tower_params);
         tower_poly.SetValues(std::move(tower_vec), Format::EVALUATION);
-
-        // Set the correctly-typed object in the DCRTPoly.
         random_poly.SetElementAtIndex(i, std::move(tower_poly));
 
         uints_offset += params->GetRingDimension();

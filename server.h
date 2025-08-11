@@ -14,8 +14,9 @@ public:
     // Collects a share from a client.
     void collectShare(const ClientShare& share);
 
-    // Orchestrates the aggregation and final decoding.
-    std::vector<double> getFinalResult(CryptoContext<DCRTPoly>& cc, uint32_t dataSize);
+    // MODIFIED: Orchestrates the aggregation and final decoding.
+    // Returns a ServerResult struct containing the final vector and timings.
+    ServerResult getFinalResult(CryptoContext<DCRTPoly>& cc, uint32_t dataSize);
 
 private:
     // Internal helper to perform the aggregation.
