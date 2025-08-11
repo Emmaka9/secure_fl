@@ -218,22 +218,24 @@ int main() {
               << "\n--- EXPERIMENT 1: SCALING NUMBER OF CLIENTS (Data Size = " << FIXED_DATA_SIZE_FOR_EXP1 << ") ---"
               << "\n==================================================================================" << std::endl;
     
-    for (int numClients : CLIENT_COUNTS) {
-        // Call run_experiment with the explicit name for this experiment.
-        run_experiment("ScalingClients", numClients, FIXED_DATA_SIZE_FOR_EXP1, compute_client_log, compute_server_log, comm_log);
-    }
+    // for (int numClients : CLIENT_COUNTS) {
+    //     // Call run_experiment with the explicit name for this experiment.
+    //     run_experiment("ScalingClients", numClients, FIXED_DATA_SIZE_FOR_EXP1, compute_client_log, compute_server_log, comm_log);
+    // }
 
+    run_experiment("ScalingClients", 50, 8192, compute_client_log, compute_server_log, comm_log);
+    
     // ============================================================================
     // --- EXPERIMENT 2: SCALING DATA SIZE ---
     // ============================================================================
-    std::cout << "\n\n============================================================================"
-              << "\n--- EXPERIMENT 2: SCALING DATA SIZE (Client Count = " << FIXED_CLIENT_COUNT_FOR_EXP2 << ") ---"
-              << "\n============================================================================" << std::endl;
+    // std::cout << "\n\n============================================================================"
+    //           << "\n--- EXPERIMENT 2: SCALING DATA SIZE (Client Count = " << FIXED_CLIENT_COUNT_FOR_EXP2 << ") ---"
+    //           << "\n============================================================================" << std::endl;
 
-    for (size_t i = 0; i < DATA_SIZES.size(); ++i) {
-        // Call run_experiment with the explicit name for this experiment.
-        run_experiment("ScalingDataSize", FIXED_CLIENT_COUNT_FOR_EXP2, DATA_SIZES[i], compute_client_log, compute_server_log, comm_log);
-    }
+    // for (size_t i = 0; i < DATA_SIZES.size(); ++i) {
+    //     // Call run_experiment with the explicit name for this experiment.
+    //     run_experiment("ScalingDataSize", FIXED_CLIENT_COUNT_FOR_EXP2, DATA_SIZES[i], compute_client_log, compute_server_log, comm_log);
+    // }
 
     // --- Cleanup ---
     compute_client_log.close();
